@@ -5,11 +5,14 @@ import DocsScreen from './screens/DocsScreen';
 import AgendaScreen from './screens/AgendaScreen';
 import MemoryScreen from './screens/MemoryScreen';
 import ContractsScreen from './screens/ContractsScreen';
+import AuthScreen from './screens/AuthScreen';
+import { AuthProvider, useAuth } from './components/AuthProvider';
 
 export type TabKey = 'talk' | 'docs' | 'agenda' | 'memory' | 'contracts';
 
-export default function App() {
+function AppInner() {
   const [currentTab, setCurrentTab] = useState<TabKey>('talk');
+  const { user } = useAuth();
 
   const renderScreen = () => {
     switch (currentTab) {
@@ -22,12 +25,24 @@ export default function App() {
     }
   };
 
+  if (!user) {
+    return <AuthScreen />;
+  }
+
+  return (
+    <Shell currentTab={currentTab} onTabChange={setCurrentTab}>
+      {renderScreen()}
+    </Shell>
+  );
+}
+
+export default function App() {
   return (
     <div className="min-h-screen w-full bg-[#0A0A0B] flex items-center justify-center font-sans text-white">
       <div className="w-[375px] h-[667px] max-h-screen bg-[#000000] md:rounded-[50px] md:border-[8px] border-[#1C1C1E] relative overflow-hidden md:shadow-2xl flex flex-col mx-auto">
-        <Shell currentTab={currentTab} onTabChange={setCurrentTab}>
-          {renderScreen()}
-        </Shell>
+        <AuthProvider>
+          <AppInner />
+        </AuthProvider>
       </div>
     </div>
   );

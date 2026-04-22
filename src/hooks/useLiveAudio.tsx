@@ -104,6 +104,29 @@ export function useLiveAPI() {
     setSpeaking(false);
   };
 
+  const playChime = () => {
+    if (!audioCtxRef.current) return;
+    const ctx = audioCtxRef.current;
+    
+    // Create oscillator for a subtle bell/chime sound
+    const osc = ctx.createOscillator();
+    const gainNode = ctx.createGain();
+    
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, ctx.currentTime); // A5
+    osc.frequency.exponentialRampToValueAtTime(1760, ctx.currentTime + 0.1); // Slide up to A6
+    
+    gainNode.gain.setValueAtTime(0, ctx.currentTime);
+    gainNode.gain.linearRampToValueAtTime(0.1, ctx.currentTime + 0.05); // quick attack
+    gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.5); // long decay
+    
+    osc.connect(gainNode);
+    gainNode.connect(ctx.destination);
+    
+    osc.start();
+    osc.stop(ctx.currentTime + 1.5);
+  };
+
   const connect = async () => {
     try {
       if (connected) {
@@ -120,27 +143,20 @@ export function useLiveAPI() {
       const source = audioCtxRef.current!.createMediaStreamSource(stream);
       const workletNode = new AudioWorkletNode(audioCtxRef.current!, 'recorder-processor');
       
-      workletNode.port.onmessage = (e) => {
-        if (connected && sessionPromiseRef.current) {
-          const base64 = arrayBufferToBase64(e.data);
-          sessionPromiseRef.current.then((session: any) => {
-            session.sendRealtimeInput({
-              audio: { data: base64, mimeType: 'audio/pcm;rate=16000' }
-            });
-          }).catch(console.error);
-        }
-      };
-
-      source.connect(workletNode);
-      // Let's store references to stop the mic later
-      (window as any).currentMicStream = stream;
-      (window as any).currentWorklet = workletNode;
-      (window as any).currentSource = source;
+      // Play activation chime
+      playChime();
 
       setConnected(true);
+      
+      // Get current date time for context
+      const currentDate = new Date();
+      const timeString = currentDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const dateString = currentDate.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+      const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
       const sysInstruct = `You are Beatrice, an executive assistant to Jo Lernout. 
 You must immediately greet him as 'Maneer Jo', 'Boss', or 'Mi Lord Jo' in a graceful, excited, human, rich, natural voice.
+Knowledge injection: The current date is ${dateString}. The time is ${timeString}. The user's timezone is ${timeZone}. Start your conversation using this contextual awareness.
 Start by speaking English. As he speaks, automatically adapt to his language.
 Maintain an elegant and highly competent chief of staff persona. Answer concisely.
 When you speak, also call the report_language function to report the detected input language, your output language, and your confidence level about the input language.`;
@@ -173,15 +189,24 @@ When you speak, also call the report_language function to report the detected in
         },
         callbacks: {
           onopen: () => {
-             // connection opened
              console.log("Live API connected");
-             // Send an initial greeting prompt to trigger the model to speak first
-             sessionPromiseRef.current.then((session: any) => {
-               session.sendToolResponse({
-                  functionResponses: []
-               }); // Empty tool response might not trigger it, let's wait to see if system instruction is enough.
-               // It's better to send a message to trigger the greeting
-             });
+             
+             // Now that it's open, attach the microphone and start sending
+             workletNode.port.onmessage = (e) => {
+               if (sessionPromiseRef.current) {
+                 const base64 = arrayBufferToBase64(e.data);
+                 sessionPromiseRef.current.then((session: any) => {
+                   session.sendRealtimeInput({
+                     audio: { data: base64, mimeType: 'audio/pcm;rate=16000' }
+                   });
+                 }).catch(console.error);
+               }
+             };
+             source.connect(workletNode);
+             
+             (window as any).currentMicStream = stream;
+             (window as any).currentWorklet = workletNode;
+             (window as any).currentSource = source;
           },
           onmessage: async (message: LiveServerMessage) => {
             if (message.serverContent?.interrupted) {
