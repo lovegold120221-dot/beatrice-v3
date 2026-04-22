@@ -1,0 +1,6 @@
+{
+  "name": "Beatrice",
+  "description": "Luxury private executive voice assistant",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": []
+}
